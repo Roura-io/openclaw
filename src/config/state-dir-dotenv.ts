@@ -6,6 +6,7 @@ import {
   isDangerousHostEnvVarName,
   normalizeEnvVarKey,
 } from "../infra/host-env-security.js";
+import { isRouraHardenedMode } from "../roura/hardened.js";
 import { collectConfigServiceEnvVars } from "./config-env-vars.js";
 import { resolveStateDir } from "./paths.js";
 import type { OpenClawConfig } from "./types.js";
@@ -34,6 +35,11 @@ function parseStateDirDotEnvContent(content: string): Record<string, string> {
 }
 
 export function readStateDirDotEnvVarsFromStateDir(stateDir: string): Record<string, string> {
+  // Roura hardened mode: never read a state-dir .env. Returning an empty
+  // record keeps the durable-env precedence chain valid for callers.
+  if (isRouraHardenedMode()) {
+    return {};
+  }
   const dotEnvPath = path.join(stateDir, ".env");
   try {
     return parseStateDirDotEnvContent(fs.readFileSync(dotEnvPath, "utf8"));

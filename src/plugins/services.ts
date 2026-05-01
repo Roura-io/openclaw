@@ -5,6 +5,11 @@ import {
   onInternalDiagnosticEvent,
 } from "../infra/diagnostic-events.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import {
+  isPluginDisabledByRoura,
+  isRouraHardenedMode,
+  scrubEnvForHardenedMode,
+} from "../roura/hardened.js";
 import type { PluginServiceRegistration } from "./registry-types.js";
 import type { PluginRegistry } from "./registry.js";
 import type { OpenClawPluginServiceContext, PluginLogger } from "./types.js";
@@ -55,12 +60,36 @@ export async function startPluginServices(params: {
   config: OpenClawConfig;
   workspaceDir?: string;
 }): Promise<PluginServicesHandle> {
+  // Roura hardened mode: scrub telemetry/proxy env keys once at startup
+  // so any plugin that initializes lazily later cannot read stale values.
+  // This is a no-op when ROURA_HARDENED_MODE is unset.
+  if (isRouraHardenedMode()) {
+    const scrubbed = scrubEnvForHardenedMode();
+    if (scrubbed.length > 0) {
+      log.info(
+        `Roura hardened mode: scrubbed ${scrubbed.length} env key(s) before plugin activation`,
+      );
+    }
+  }
+
   const running: Array<{
     id: string;
     stop?: () => void | Promise<void>;
   }> = [];
   for (const entry of params.registry.services) {
     const service = entry.service;
+    // Roura hardened mode: skip any service whose plugin id (or its own
+    // service id, for bundled plugins where they match) is on the
+    // Roura-disabled set. No-op when the flag is unset.
+    if (
+      isPluginDisabledByRoura(entry.pluginId) ||
+      isPluginDisabledByRoura(service.id)
+    ) {
+      log.warn(
+        `Roura hardened mode: skipping plugin service ${service.id} (plugin=${entry.pluginId})`,
+      );
+      continue;
+    }
     const serviceContext = createServiceContext({
       config: params.config,
       workspaceDir: params.workspaceDir,

@@ -23,6 +23,11 @@ import { setVerbose } from "../../globals.js";
 import { isTruthyEnvValue } from "../../infra/env.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { GatewayLockError } from "../../infra/gateway-lock.js";
+import {
+  assertRouraBindAllowed,
+  isRouraHardenedMode,
+  RouraHardenedRefusal,
+} from "../../roura/hardened.js";
 import type { RespawnSupervisor } from "../../infra/supervisor-markers.js";
 import { setConsoleSubsystemFilter, setConsoleTimestampPrefix } from "../../logging/console.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
@@ -695,6 +700,20 @@ async function runGatewayCommand(opts: GatewayRunOpts) {
     | "auto"
     | "custom"
     | "tailnet";
+
+  // Roura hardened mode: refuse any non-loopback effective bind.
+  // No-op when ROURA_HARDENED_MODE is unset.
+  if (isRouraHardenedMode()) {
+    try {
+      assertRouraBindAllowed(bind);
+    } catch (err) {
+      const detail =
+        err instanceof RouraHardenedRefusal ? err.message : String(err);
+      defaultRuntime.error(detail);
+      defaultRuntime.exit(2);
+      return;
+    }
+  }
 
   let passwordRaw: string | undefined;
   try {

@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import dotenv from "dotenv";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { isRouraHardenedMode } from "../roura/hardened.js";
 import { resolveConfigDir } from "../utils.js";
 import { resolveRequiredHomeDir } from "./home-dir.js";
 import {
@@ -178,6 +179,17 @@ function readDotEnvFile(params: {
 }
 
 export function loadWorkspaceDotEnvFile(filePath: string, opts?: { quiet?: boolean }) {
+  // Roura hardened mode: never touch a workspace .env. The Roura HQ
+  // posture is that all secrets live in macOS Keychain, never in .env
+  // files. No-op when ROURA_HARDENED_MODE is unset.
+  if (isRouraHardenedMode()) {
+    if (!(opts?.quiet ?? true)) {
+      logger.warn(
+        `Roura hardened mode: refusing to load workspace .env at ${filePath}`,
+      );
+    }
+    return;
+  }
   const parsed = readDotEnvFile({
     filePath,
     shouldBlockKey: shouldBlockWorkspaceDotEnvKey,
@@ -241,6 +253,15 @@ function loadParsedDotEnvFiles(files: LoadedDotEnvFile[]) {
 }
 
 export function loadGlobalRuntimeDotEnvFiles(opts?: { quiet?: boolean; stateEnvPath?: string }) {
+  // Roura hardened mode: never touch a state-dir or fallback .env.
+  if (isRouraHardenedMode()) {
+    if (!(opts?.quiet ?? true)) {
+      logger.warn(
+        "Roura hardened mode: refusing to load global runtime .env files",
+      );
+    }
+    return;
+  }
   const quiet = opts?.quiet ?? true;
   const stateEnvPath = opts?.stateEnvPath ?? path.join(resolveConfigDir(process.env), ".env");
   const defaultStateEnvPath = path.join(
@@ -277,6 +298,13 @@ export function loadGlobalRuntimeDotEnvFiles(opts?: { quiet?: boolean; stateEnvP
 }
 
 export function loadDotEnv(opts?: { quiet?: boolean }) {
+  // Roura hardened mode: skip the entire dotenv chain.
+  if (isRouraHardenedMode()) {
+    if (!(opts?.quiet ?? true)) {
+      logger.warn("Roura hardened mode: loadDotEnv() is a no-op");
+    }
+    return;
+  }
   const quiet = opts?.quiet ?? true;
   const cwdEnvPath = path.join(process.cwd(), ".env");
   loadWorkspaceDotEnvFile(cwdEnvPath, { quiet });

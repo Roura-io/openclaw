@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { type CommandOptions, runCommandWithTimeout } from "../process/exec.js";
+import { isRouraHardenedMode } from "../roura/hardened.js";
 import {
   resolveControlUiDistIndexHealth,
   resolveControlUiDistIndexPathForRoot,
@@ -656,6 +657,19 @@ export async function resolveUpdateInstallSurface(
 
 export async function runGatewayUpdate(opts: UpdateRunnerOptions = {}): Promise<UpdateRunResult> {
   const startedAt = Date.now();
+  // Roura hardened mode: refuse self-update. The fork is pinned by the
+  // Roura audit; updates must go through a fresh review cycle, not a
+  // git-checkout / git-rebase from the running process. No-op when
+  // ROURA_HARDENED_MODE is unset.
+  if (isRouraHardenedMode()) {
+    return {
+      status: "skipped",
+      mode: "unknown",
+      reason: "Roura hardened mode: self-update is disabled (ROURA_HARDENED_MODE=1)",
+      steps: [],
+      durationMs: Date.now() - startedAt,
+    };
+  }
   const { defaultCommandEnv, runCommand } = await buildUpdateCommandRunner(opts.runCommand);
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const progress = opts.progress;
